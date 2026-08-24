@@ -122,6 +122,11 @@
       <label><input type="checkbox" id="atmo" checked> Atmosphere + space sky</label>
       <label><input type="checkbox" id="terrain"> 3D terrain (costs frame rate)</label>
       <label><input type="checkbox" id="labels" checked> City / country labels</label>
+      <label>Label language</label>
+      <select id="nameLang">
+        <option value="en">English</option>
+        <option value="">Browser language</option>
+      </select>
     </div>
 
     <div class="sec"><b>3 &middot; Camera</b>
@@ -659,6 +664,15 @@ function applyLook(){
 }
 
 // ---------- stops ----------
+// Nominatim answers in the browser's language unless told otherwise, and for some
+// places it returns several names joined by ';' ("United States" came back as
+// "美国;美國"). Pin the language and keep only the first name.
+function langParam(){
+  const v = $('nameLang').value;
+  return v ? '&accept-language=' + v : '';
+}
+function oneName(v){ return (v || '').split(';')[0].trim(); }
+
 function flagOf(cc){
   if (!cc || cc.length !== 2) return '';
   return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
@@ -678,11 +692,11 @@ async function addStopFromClick(ll){
   const s = {lng:ll.lng, lat:ll.lat, city:ll.lat.toFixed(2)+', '+ll.lng.toFixed(2), country:'', flag:''};
   pushStop(s);
   try {
-    const j = await (await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat='+
-      ll.lat+'&lon='+ll.lng, {signal:AbortSignal.timeout(8000)})).json();
+    const j = await (await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10'+
+      langParam() + '&lat='+ll.lat+'&lon='+ll.lng, {signal:AbortSignal.timeout(8000)})).json();
     const a = j.address || {};
-    s.city = a.city || a.town || a.village || a.county || a.state || j.name || s.city;
-    s.country = a.country || '';
+    s.city = oneName(a.city || a.town || a.village || a.county || a.state || j.name) || s.city;
+    s.country = oneName(a.country);
     s.flag = flagOf(a.country_code);
     renderList(); registerAllIcons();
   } catch(e){}
@@ -1128,7 +1142,7 @@ async function search(){
   if (!q) return;
   status('Searching...');
   const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1'+
-    '&limit=5&q='+encodeURIComponent(q), {signal:AbortSignal.timeout(8000)});
+    '&limit=5' + langParam() + '&q='+encodeURIComponent(q), {signal:AbortSignal.timeout(8000)});
   const j = await r.json();
   const box = $('hits'); box.innerHTML = '';
   if (!j.length) { status('No match.'); return; }
@@ -1140,8 +1154,8 @@ async function search(){
     d.onclick = () => {
       pushStop({
         lng:+h.lon, lat:+h.lat,
-        city: a.city || a.town || a.village || h.name || h.display_name.split(',')[0],
-        country: a.country || '',
+        city: oneName(a.city || a.town || a.village || h.name || h.display_name.split(',')[0]),
+        country: oneName(a.country),
         flag: flagOf(a.country_code)
       });
       box.innerHTML = ''; $('q').value = '';
