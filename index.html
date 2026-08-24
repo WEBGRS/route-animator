@@ -1,0 +1,1215 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Route Animator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23123'/%3E%3Cpath d='M4 18 Q16 2 28 14' stroke='%2338b6ff' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  :root{ --bg:#0b0d11; --panel:#15181e; --line:#252a33; --txt:#e6e9ef; --dim:#98a2b3; --acc:#38b6ff; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font:13px/1.45 "Segoe UI",system-ui,sans-serif;overflow:hidden}
+  #wrap{display:flex;height:100%}
+  #panel{width:330px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    overflow-y:auto;padding:14px}
+  #stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    position:relative;background:#000}
+  #frame{transform-origin:center center;box-shadow:0 0 0 1px var(--line),0 20px 60px #000}
+  #map{width:100%;height:100%;background:#000}
+  #fps{position:absolute;top:10px;right:12px;font:11px/1 ui-monospace,monospace;
+    color:#8fd6ff;background:#000a;padding:5px 8px;border-radius:5px;pointer-events:none}
+  .maplibregl-ctrl-attrib{font-size:10px;opacity:.5}
+  h1{font-size:15px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:11px;margin:0 0 14px}
+  .sec{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  .sec>b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);margin-bottom:8px}
+  label{display:block;font-size:11px;color:var(--dim);margin:8px 0 3px}
+  input,select,button{font:inherit;background:#1e232b;color:var(--txt);
+    border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+  input[type=range]{padding:0;border:0;background:none}
+  input[type=color]{padding:2px;height:30px}
+  input[type=checkbox]{width:auto;vertical-align:-1px;margin-right:5px}
+  button{cursor:pointer}
+  button:hover{border-color:#49525f}
+  button.pri{background:var(--acc);border-color:var(--acc);color:#04121d;font-weight:700}
+  button.rec{background:#e03e3e;border-color:#e03e3e;color:#fff;font-weight:700}
+  .row{display:flex;gap:6px}
+  .row>*{min-width:0}
+  .val{float:right;color:var(--txt);font-variant-numeric:tabular-nums}
+  #hits div{padding:5px 7px;border-radius:5px;cursor:pointer;color:var(--dim);font-size:12px}
+  #hits div:hover{background:#1e232b;color:var(--txt)}
+  #list{list-style:none;margin:8px 0 0;padding:0}
+  #list li{display:flex;gap:5px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line)}
+  #list .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+  #list select{width:80px;flex:none;padding:3px 4px;font-size:12px}
+  #list .x{width:24px;flex:none;padding:3px;color:var(--dim)}
+  #status{margin-top:10px;font-size:11px;color:var(--dim);min-height:16px}
+  .hint{font-size:11px;color:var(--dim);margin-top:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="panel">
+    <h1>Route Animator</h1>
+    <p class="sub">Satellite globe route videos. Per-leg transport, no account, no watermark.</p>
+
+    <div class="sec"><b>1 &middot; Stops</b>
+      <div class="row">
+        <input id="q" placeholder="Search a place, then Enter">
+        <button id="go" style="width:52px">Find</button>
+      </div>
+      <div id="hits"></div>
+      <p class="hint">Or click the globe to drop a stop.</p>
+      <label>Transport for the NEXT leg</label>
+      <select id="mode"></select>
+      <label>Custom icon (emoji, overrides preset)</label>
+      <input id="customIcon" placeholder="e.g. a single emoji">
+      <label>Custom icon image (PNG / SVG, overrides both)</label>
+      <input type="file" id="customImg" accept="image/*" style="padding:4px">
+      <ul id="list"></ul>
+      <div class="row" style="margin-top:8px">
+        <button id="undo">Undo</button>
+        <button id="clear">Clear</button>
+      </div>
+    </div>
+
+    <div class="sec"><b>2 &middot; Look</b>
+      <label>Base map</label>
+      <select id="style">
+        <option value="satellite">Satellite globe (mult-style)</option>
+        <option value="satlabel">Satellite + place names</option>
+        <option value="dark">Dark vector</option>
+        <option value="liberty">Liberty vector</option>
+      </select>
+      <label>Canvas</label>
+      <select id="size">
+        <option value="1920x1080">1920 x 1080 (16:9)</option>
+        <option value="1080x1920">1080 x 1920 (9:16 vertical)</option>
+        <option value="1080x1080">1080 x 1080 (square)</option>
+        <option value="1280x720">1280 x 720</option>
+      </select>
+      <div class="row">
+        <div style="flex:1">
+          <label>Trail</label><input type="color" id="color" value="#38b6ff">
+        </div>
+        <div style="flex:1">
+          <label>Width <span class="val" id="wV">5</span></label>
+          <input type="range" id="width" min="1" max="16" value="5">
+        </div>
+      </div>
+      <label>Plane look</label>
+      <select id="planeStyle">
+        <option value="jetliner">Jetliner (swept, winglets)</option>
+        <option value="delta">Delta jet (sharp)</option>
+        <option value="paperplane">Paper plane (minimal)</option>
+        <option value="widebody">Wide-body</option>
+        <option value="emoji">Emoji plane</option>
+      </select>
+      <label>Ground vehicles</label>
+      <select id="iconSet">
+        <option value="art">Top-down artwork</option>
+        <option value="emoji">Emoji</option>
+      </select>
+      <label>Icon size <span class="val" id="isV">1.0</span></label>
+      <input type="range" id="iconSize" min="3" max="30" value="10">
+      <label><input type="checkbox" id="flightArc" checked> Climb / cruise / descend altitude</label>
+      <label>Label size <span class="val" id="lsV">1.0</span></label>
+      <input type="range" id="labelSize" min="4" max="24" value="10">
+      <label><input type="checkbox" id="globe" checked> Globe projection</label>
+      <label><input type="checkbox" id="atmo" checked> Atmosphere + space sky</label>
+      <label><input type="checkbox" id="terrain"> 3D terrain (costs frame rate)</label>
+      <label><input type="checkbox" id="labels" checked> City / country labels</label>
+    </div>
+
+    <div class="sec"><b>3 &middot; Camera</b>
+      <label>Mode</label>
+      <select id="cam">
+        <option value="auto">Auto cinematic (zoom per leg)</option>
+        <option value="fixed">Fixed zoom, chase</option>
+        <option value="static">Static overview</option>
+      </select>
+      <label>Zoom <span class="val" id="zV">4.0</span></label>
+      <input type="range" id="zoom" min="0.5" max="16" step="0.1" value="4">
+      <label>Max pitch <span class="val" id="pV">45</span></label>
+      <input type="range" id="pitch" min="0" max="70" value="45">
+      <label>Duration (s) <span class="val" id="dV">20</span></label>
+      <input type="range" id="dur" min="4" max="120" value="20">
+      <label>Screen time per leg</label>
+      <select id="timing">
+        <option value="equal">Equal, whatever the distance</option>
+        <option value="balanced">Balanced (long legs a little longer)</option>
+        <option value="distance">By distance (realistic, lopsided)</option>
+      </select>
+      <label>Hold on each city (s) <span class="val" id="hV">1.5</span></label>
+      <input type="range" id="hold" min="0" max="5" step="0.1" value="1.5">
+      <label>City close-up zoom <span class="val" id="czV">9.0</span></label>
+      <input type="range" id="cityZoom" min="5" max="13" step="0.1" value="9">
+      <label><input type="checkbox" id="follow"> Rotate camera to heading</label>
+    </div>
+
+    <div class="sec"><b>4 &middot; Render</b>
+      <div class="row">
+        <div style="flex:1">
+          <label>Render scale</label>
+          <select id="scale">
+            <option value="1">1x (fastest, exact size)</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x (sharpest, slowest)</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <label>Frame rate</label>
+          <select id="fpsSel">
+            <option value="30">30 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+        </div>
+      </div>
+      <label><input type="checkbox" id="autoPreload" checked> Cache tiles before recording</label>
+      <div class="row" style="margin-top:8px">
+        <button id="preview" class="pri">Preview</button>
+        <button id="record" class="rec">Record</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="preload">Preload tiles</button>
+        <button id="fit">Fit whole route</button>
+      </div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <div id="stage"><div id="frame"><div id="map"></div></div><div id="fps"></div></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+<script>
+// ---------- transport presets ----------
+// off = icon rotation offset so the glyph points along the heading
+const MODES = {
+  car:    {label:'Car',    emoji:'\u{1F697}', off: 90, road:true,  bend:0},
+  bus:    {label:'Bus',    emoji:'\u{1F68C}', off: 90, road:true,  bend:0},
+  bike:   {label:'Bike',   emoji:'\u{1F6B4}', off: 90, road:true,  bend:0},
+  walk:   {label:'Walk',   emoji:'\u{1F6B6}', off: 90, road:true,  bend:0},
+  train:  {label:'Train',  emoji:'\u{1F684}', off: 90, road:false, bend:0.05},
+  plane:  {label:'Plane',  emoji:'\u{2708}\u{FE0F}', off:-45, road:false, bend:0.20, fly:true},
+  ship:   {label:'Ship',   emoji:'\u{1F6A2}', off: 90, road:false, bend:0.10},
+  rocket: {label:'Rocket', emoji:'\u{1F680}', off:-45, road:false, bend:0.30, fly:true}
+};
+// climb / descend over this fraction of a flying leg
+const CLIMB = 0.28;
+// hard ceiling on camera zoom speed, in zoom levels per second
+const ZOOM_RATE = 3.0;
+
+const ESRI_SAT = {
+  type:'raster', tileSize:256, maxzoom:19,
+  attribution:'Esri, Maxar, Earthstar Geographics',
+  tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}']
+};
+const ESRI_REF = {
+  type:'raster', tileSize:256, maxzoom:19,
+  tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}']
+};
+function satStyle(withNames){
+  const s = {
+    version:8, projection:{type:'globe'},
+    glyphs:'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    sources:{sat:ESRI_SAT}, layers:[{id:'sat',type:'raster',source:'sat'}]
+  };
+  if (withNames) {
+    s.sources.ref = ESRI_REF;
+    s.layers.push({id:'ref',type:'raster',source:'ref',paint:{'raster-opacity':0.85}});
+  }
+  return s;
+}
+const STYLES = {
+  satellite: () => satStyle(false),
+  satlabel:  () => satStyle(true),
+  dark:      () => 'https://tiles.openfreemap.org/styles/dark',
+  liberty:   () => 'https://tiles.openfreemap.org/styles/liberty'
+};
+
+const $ = id => document.getElementById(id);
+const status = m => $('status').textContent = m;
+const clamp = (v,a,b) => Math.max(a, Math.min(b,v));
+const mix = (a,b,t) => a + (b-a)*t;
+const smooth = t => t*t*(3-2*t);
+const RAD = Math.PI/180;
+
+// ---------- state ----------
+let stops = [];   // {lng,lat,city,country,flag,mode,emoji,off}
+let legs = [];    // {mode,emoji,off,km,zoom,f0,f1}
+let pts = [];     // full polyline, longitudes UNWRAPPED (may run past +/-180)
+let cum = [];     // cumulative mercator length, matches MapLibre's line-progress
+let cumTotal = 0, totalKm = 0;
+let raf = null, recorder = null, labelIds = [], customImgData = null;
+
+// ---------- map ----------
+const map = new maplibregl.Map({
+  container:'map', style:STYLES.satellite(), center:[8.5,47.4], zoom:2.2,
+  attributionControl:{compact:true}, maxPitch:75,
+  fadeDuration:0,            // no symbol cross-fade work while the camera moves
+  maxTileCacheSize:1200,     // keep the preloaded route tiles resident
+  refreshExpiredTiles:false
+});
+map.setPixelRatio(1);
+map.on('style.load', onStyle);
+map.on('click', e => addStopFromClick(e.lngLat));
+
+// addImage/addLayer re-fire style events, so guard against re-entry
+let inStyle = false;
+function onStyle(){
+  if (inStyle) return;
+  inStyle = true;
+  try { buildStyleLayers(); } finally { inStyle = false; }
+}
+function buildStyleLayers(){
+  if (!map.getSource('route')) {
+    // lineMetrics lets the trail be revealed with line-gradient instead of
+    // re-uploading a growing GeoJSON every single frame
+    map.addSource('route', {type:'geojson', lineMetrics:true, data:emptyLine()});
+    map.addSource('stops', {type:'geojson', data:fc([])});
+    map.addSource('veh',   {type:'geojson', data:fc([])});
+  }
+  once({id:'route-line',type:'line',source:'route',
+    layout:{'line-cap':'round','line-join':'round'},
+    paint:{'line-color':'#ffffff','line-width':1.4,'line-opacity':0.40,'line-dasharray':[3,3]}});
+  once({id:'trail-glow',type:'line',source:'route',
+    layout:{'line-cap':'round','line-join':'round'},
+    paint:{'line-width':20,'line-opacity':0.22,'line-blur':14,'line-gradient':gradient(0)}});
+  once({id:'trail-line',type:'line',source:'route',
+    layout:{'line-cap':'round','line-join':'round'},
+    paint:{'line-width':5,'line-gradient':gradient(0)}});
+  once({id:'stop-halo',type:'circle',source:'stops',
+    paint:{'circle-radius':11,'circle-color':$('color').value,'circle-opacity':0.22,'circle-blur':0.7}});
+  once({id:'stop-dot',type:'circle',source:'stops',
+    paint:{'circle-radius':4.5,'circle-color':'#ffffff',
+      'circle-stroke-width':2.5,'circle-stroke-color':$('color').value}});
+  once({id:'stop-label',type:'symbol',source:'stops',
+    layout:{'icon-image':['get','lbl'],'icon-size':+$('labelSize').value/10,
+      'icon-anchor':'bottom','icon-offset':[0,-26],
+      'icon-allow-overlap':false,'icon-ignore-placement':false,'icon-padding':6}});
+  once({id:'vehicle-shadow',type:'symbol',source:'veh',
+    layout:{'icon-image':['get','shadow'],'icon-size':['get','shSize'],
+      'icon-rotate':['get','rot'],'icon-rotation-alignment':'map',
+      'icon-allow-overlap':true,'icon-ignore-placement':true},
+    paint:{'icon-opacity':['get','shOp'],'icon-translate':[0,0],
+      'icon-translate-anchor':'viewport'}});
+  once({id:'vehicle',type:'symbol',source:'veh',
+    layout:{'icon-image':['get','icon'],'icon-size':['get','size'],
+      'icon-rotate':['get','rot'],'icon-rotation-alignment':'map',
+      'icon-allow-overlap':true,'icon-ignore-placement':true}});
+  registerArtIcons();
+  registerAllIcons();
+  applyLook();
+  redraw();
+}
+function once(def){ if (!map.getLayer(def.id)) map.addLayer(def); }
+function fc(f){ return {type:'FeatureCollection',features:f}; }
+function emptyLine(){ return {type:'Feature',geometry:{type:'LineString',coordinates:[]},properties:{}}; }
+
+// reveal 0..t of the line, hide the rest -- one cheap paint property per frame
+function gradient(t){
+  const e = clamp(t, 0.0002, 0.9999);
+  return ['step', ['line-progress'], $('color').value, e, 'rgba(0,0,0,0)'];
+}
+
+// ---------- emoji images ----------
+// Segoe UI Emoji has no flag glyphs, so emoji come from Twemoji SVGs (CORS-clean,
+// fetched as text and re-sized into a data: URI so the canvas stays untainted).
+const TWEMOJI = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/';
+const emojiCache = new Map();
+function twemojiUrl(e){
+  const cps = [...e].map(c => c.codePointAt(0)).filter(c => c !== 0xFE0F)
+    .map(c => c.toString(16));
+  return TWEMOJI + cps.join('-') + '.svg';
+}
+async function emojiImage(emoji, S){
+  const key = emoji + '@' + S;
+  if (emojiCache.has(key)) return emojiCache.get(key);
+  let img = null;
+  try {
+    const svg = await (await fetch(twemojiUrl(emoji))).text();
+    const sized = svg.replace('<svg ', '<svg width="'+S+'" height="'+S+'" ');
+    img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i); i.onerror = rej;
+      i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sized);
+    });
+  } catch(e) { img = null; }
+  emojiCache.set(key, img);
+  return img;
+}
+function drawEmoji(x, emoji, cx, cy, S, img){
+  if (img) { x.drawImage(img, cx - S/2, cy - S/2, S, S); return; }
+  x.font = Math.round(S)+'px "Segoe UI Emoji","Apple Color Emoji",sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(emoji, cx, cy);
+}
+
+// ---------- vehicle artwork ----------
+// All drawn top-down in a 100x100 box with the nose pointing north, so each one takes
+// the heading rotation directly. Emoji are a 3/4 side view and read wrong from above.
+const INK = 'rgba(8,13,22,.92)';
+function poly(g, pts){
+  g.beginPath();
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  g.closePath();
+}
+function rr(g, x, y, w, h, r){ g.beginPath(); g.roundRect(x, y, w, h, r); }
+function paint(g, fill, lw, ink){
+  g.fillStyle = fill; g.fill();
+  if (lw) { g.strokeStyle = ink || INK; g.lineWidth = lw; g.lineJoin = 'round'; g.stroke(); }
+}
+function metal(g, a, b){
+  const grad = g.createLinearGradient(14, 0, 86, 100);
+  grad.addColorStop(0, a); grad.addColorStop(0.5, '#dde5ef'); grad.addColorStop(1, b);
+  return grad;
+}
+
+const ART = {
+  // --- aircraft ---
+  jetliner(g){
+    const skin = metal(g, '#ffffff', '#8fa0b6');
+    poly(g, [[54,40],[92,71],[92,77],[54,59]]); paint(g, skin, 1.7);
+    poly(g, [[46,40],[8,71],[8,77],[46,59]]);   paint(g, skin, 1.7);
+    poly(g, [[92,71],[96,61],[96,71],[92,77]]); paint(g, '#c6cfdb', 1.3);   // winglets
+    poly(g, [[8,71],[4,61],[4,71],[8,77]]);     paint(g, '#c6cfdb', 1.3);
+    poly(g, [[52,79],[71,90],[71,95],[52,88]]); paint(g, skin, 1.5);        // tailplanes
+    poly(g, [[48,79],[29,90],[29,95],[48,88]]); paint(g, skin, 1.5);
+    [[64,57],[36,57]].forEach(([x,y]) => { rr(g, x-4.4, y-9, 8.8, 18, 4.2); paint(g, '#4d5d73', 1.3); });
+    g.beginPath();
+    g.moveTo(50,1);
+    g.bezierCurveTo(55,10, 56,30, 56,58);
+    g.bezierCurveTo(56,80, 54,90, 52,97);
+    g.lineTo(48,97);
+    g.bezierCurveTo(46,90, 44,80, 44,58);
+    g.bezierCurveTo(44,30, 45,10, 50,1);
+    g.closePath();
+    paint(g, skin, 1.8);
+    g.beginPath(); g.ellipse(50, 11, 3.3, 4.8, 0, 0, 6.284);
+    paint(g, 'rgba(36,56,84,.92)', 0);
+  },
+  delta(g){
+    poly(g, [[50,2],[58,52],[93,86],[93,93],[56,79],[54,97],[46,97],[44,79],[7,93],[7,86],[42,52]]);
+    paint(g, metal(g, '#f7fafd', '#7d8ca2'), 1.9);
+    g.beginPath(); g.moveTo(50,12); g.lineTo(50,90);
+    g.strokeStyle = 'rgba(70,92,120,.4)'; g.lineWidth = 1.3; g.stroke();
+    g.beginPath(); g.ellipse(50, 17, 3, 5.4, 0, 0, 6.284);
+    paint(g, 'rgba(34,54,80,.92)', 0);
+  },
+  paperplane(g){
+    poly(g, [[50,3],[95,95],[50,71],[5,95]]);
+    paint(g, '#f5f8fc', 2.2);
+    poly(g, [[50,3],[95,95],[50,71]]);
+    paint(g, 'rgba(176,192,212,.85)', 0);   // the far fold, only slightly darker
+    g.beginPath(); g.moveTo(50,3); g.lineTo(50,71);
+    g.strokeStyle = INK; g.lineWidth = 1.8; g.stroke();
+  },
+  widebody(g){
+    const skin = metal(g, '#ffffff', '#94a2b4');
+    poly(g, [[50,3],[56.5,25],[56.5,43],[96,65],[96,73],[56.5,61],[55.5,81],
+             [73,92],[73,96.5],[54,91],[51.6,97],[48.4,97],[46,91],[27,96.5],
+             [27,92],[44.5,81],[43.5,61],[4,73],[4,65],[43.5,43],[43.5,25]]);
+    paint(g, skin, 2.0);
+    [[26,62],[74,62]].forEach(([x,y]) => {
+      g.beginPath(); g.ellipse(x, y, 4.6, 8.5, 0, 0, 6.284); paint(g, 'rgba(60,76,96,.9)', 0);
+    });
+    g.beginPath(); g.ellipse(50, 12, 3.6, 5.2, 0, 0, 6.284);
+    paint(g, 'rgba(40,60,86,.85)', 0);
+  },
+
+  // --- ground ---
+  car(g){
+    rr(g, 24, 34, 10, 6, 3);  paint(g, '#a92c19', 1.0);      // mirrors
+    rr(g, 66, 34, 10, 6, 3);  paint(g, '#a92c19', 1.0);
+    const body = g.createLinearGradient(30, 0, 70, 100);
+    body.addColorStop(0, '#ff7b62'); body.addColorStop(1, '#b82a17');
+    rr(g, 30, 5, 40, 90, 14); paint(g, body, 2.1);
+    // one glass area with the roof panel laid over it -- what is left reads as the
+    // windscreen and rear window, which a pale blob in the middle never did
+    poly(g, [[37,25],[63,25],[64,72],[36,72]]); paint(g, 'rgba(24,38,58,.9)', 0);
+    rr(g, 36.5, 39, 27, 24, 6); paint(g, body, 1.2);
+    rr(g, 33, 7.5, 10, 4.5, 2.2); paint(g, 'rgba(255,248,220,.95)', 0);
+    rr(g, 57, 7.5, 10, 4.5, 2.2); paint(g, 'rgba(255,248,220,.95)', 0);
+    rr(g, 33, 87, 10, 4.5, 2.2);  paint(g, 'rgba(255,92,72,.9)', 0);
+    rr(g, 57, 87, 10, 4.5, 2.2);  paint(g, 'rgba(255,92,72,.9)', 0);
+  },
+  bus(g){
+    const body = g.createLinearGradient(28, 0, 72, 0);
+    body.addColorStop(0, '#ffd75c'); body.addColorStop(1, '#dc9d15');
+    rr(g, 28, 3, 44, 94, 11);    paint(g, body, 2.1);
+    rr(g, 33, 8, 34, 12, 5);     paint(g, 'rgba(24,38,58,.9)', 0);    // windscreen
+    rr(g, 30.5, 27, 6.5, 56, 3); paint(g, 'rgba(24,38,58,.6)', 0);    // continuous side glass
+    rr(g, 63, 27, 6.5, 56, 3);   paint(g, 'rgba(24,38,58,.6)', 0);
+    rr(g, 44, 24, 12, 62, 5);    paint(g, 'rgba(255,255,255,.3)', 0); // roof stripe
+    rr(g, 33, 88, 34, 5, 2.4);   paint(g, 'rgba(255,96,72,.85)', 0);  // tail light bar
+  },
+  train(g){
+    g.beginPath();
+    g.moveTo(50,1);
+    g.bezierCurveTo(62,10, 68,25, 68,41);
+    g.lineTo(68,93); g.quadraticCurveTo(68,97, 64,97);
+    g.lineTo(36,97); g.quadraticCurveTo(32,97, 32,93);
+    g.lineTo(32,41);
+    g.bezierCurveTo(32,25, 38,10, 50,1);
+    g.closePath();
+    const skin = g.createLinearGradient(0, 0, 0, 100);
+    skin.addColorStop(0, '#f2f6fa'); skin.addColorStop(1, '#adbacb');
+    paint(g, skin, 2.1);
+    g.beginPath();
+    g.moveTo(41,21); g.quadraticCurveTo(50,12, 59,21); g.quadraticCurveTo(50,29, 41,21);
+    g.closePath(); paint(g, 'rgba(26,42,64,.92)', 0);
+    g.fillStyle = '#2b6fd6'; g.fillRect(32, 45, 36, 7);
+    g.beginPath(); g.moveTo(50,32); g.lineTo(50,92);
+    g.strokeStyle = 'rgba(120,140,164,.55)'; g.lineWidth = 1.5; g.stroke();
+  },
+  ship(g){
+    g.beginPath();
+    g.moveTo(50,2);
+    g.bezierCurveTo(62,17, 68,37, 68,58);
+    g.lineTo(68,92); g.quadraticCurveTo(68,96, 64,96);
+    g.lineTo(36,96); g.quadraticCurveTo(32,96, 32,92);
+    g.lineTo(32,58);
+    g.bezierCurveTo(32,37, 38,17, 50,2);
+    g.closePath();
+    const hull = g.createLinearGradient(0, 0, 0, 100);
+    hull.addColorStop(0, '#314055'); hull.addColorStop(1, '#151f2d');
+    paint(g, hull, 2.1);
+    rr(g, 37, 31, 26, 25, 4); paint(g, '#e7edf4', 0);
+    rr(g, 39, 60, 22, 24, 4); paint(g, '#f7fafd', 0);
+    rr(g, 42, 64, 16, 9, 2);  paint(g, 'rgba(40,60,86,.8)', 0);
+    g.beginPath(); g.moveTo(44,15); g.quadraticCurveTo(50,9, 56,15);
+    g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 1.6; g.stroke();
+  },
+  // A top-down cyclist or pedestrian is unreadable at icon size, so those modes get
+  // the standard GPS-puck idiom instead: a heading cone over a ringed dot.
+  puck(g){
+    poly(g, [[50,5],[71,42],[29,42]]);
+    g.globalAlpha = 0.5; paint(g, '#2f6fed', 0); g.globalAlpha = 1;
+    g.beginPath(); g.arc(50, 59, 25, 0, 6.284); paint(g, '#2f6fed', 5, '#ffffff');
+    g.beginPath(); g.arc(50, 59, 9, 0, 6.284);  paint(g, 'rgba(255,255,255,.92)', 0);
+  }
+};
+// which artwork each transport mode uses when the icon set is "artwork"
+const ART_FOR = {car:'car', bus:'bus', bike:'puck', walk:'puck', train:'train', ship:'ship'};
+
+function drawArt(g, S, name){
+  g.save();
+  g.scale(S/100, S/100);
+  ART[name](g);
+  g.restore();
+}
+
+// Every icon gets a matching blurred black silhouette, used as its ground shadow.
+// Offsetting that shadow is what sells altitude on a flat map.
+function registerPair(key, canvas){
+  const S = canvas.width;
+  if (!map.hasImage(key)) {
+    map.addImage(key, canvas.getContext('2d').getImageData(0,0,S,S), {pixelRatio:2});
+  }
+  const sk = 'sh_' + key;
+  if (!map.hasImage(sk)) {
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    g.filter = 'blur(5px)';
+    g.drawImage(canvas, 0, 0);
+    g.filter = 'none';
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, S, S);
+    map.addImage(sk, g.getImageData(0,0,S,S), {pixelRatio:2});
+  }
+}
+
+const ICON_S = 176;
+function artKey(name){ return 'art_' + name; }
+function registerArtIcons(){
+  Object.keys(ART).forEach(name => {
+    const k = artKey(name);
+    if (map.hasImage(k)) return;
+    const c = document.createElement('canvas');
+    c.width = c.height = ICON_S;
+    const g = c.getContext('2d');
+    const pad = ICON_S*0.06;
+    g.translate(pad, pad);
+    drawArt(g, ICON_S - pad*2, name);
+    registerPair(k, c);
+  });
+}
+
+function iconKey(e){ return 'i_' + [...e].map(c=>c.codePointAt(0).toString(16)).join('_'); }
+const pending = new Set();
+async function registerIcon(emoji){
+  const k = iconKey(emoji);
+  if (map.hasImage(k) || pending.has(k)) return k;
+  pending.add(k);
+  const S = ICON_S, G = Math.round(S*0.84);
+  const img = await emojiImage(emoji, G);
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff';
+  drawEmoji(x, emoji, S/2, S/2, G, img);
+  pending.delete(k);
+  registerPair(k, c);
+  return k;
+}
+// user-supplied PNG/SVG, sized into the same box as everything else
+async function registerImageIcon(dataUrl){
+  const k = 'usr_' + (dataUrl.length + '_' + dataUrl.slice(-24)).replace(/[^a-zA-Z0-9]/g,'');
+  if (map.hasImage(k)) return k;
+  const img = await new Promise((res,rej) => {
+    const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl;
+  });
+  const S = ICON_S;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const r = Math.min(S/img.width, S/img.height) * 0.9;
+  g.drawImage(img, (S - img.width*r)/2, (S - img.height*r)/2, img.width*r, img.height*r);
+  registerPair(k, c);
+  return k;
+}
+async function registerAllIcons(){
+  for (const m of Object.values(MODES)) await registerIcon(m.emoji);
+  for (const s of stops) {
+    if (s.emoji) await registerIcon(s.emoji);
+    if (s.imgData) s.imgKey = await registerImageIcon(s.imgData);
+  }
+  for (let i = 0; i < stops.length; i++) await registerLabel(stops[i], i);
+  redraw();
+  map.triggerRepaint();
+}
+async function registerLabel(s, i){
+  const k = 'lbl_' + i;
+  const city = (s.city || '').toUpperCase();
+  const country = (s.country || '').toUpperCase();
+  const F1 = '700 60px "Segoe UI",system-ui,sans-serif';
+  const F2 = '600 42px "Segoe UI",system-ui,sans-serif';
+  const FG = 46, GAP = 14;
+  const flag = s.flag ? await emojiImage(s.flag, FG) : null;
+
+  const m = document.createElement('canvas').getContext('2d');
+  m.font = F1; m.letterSpacing = '5px';
+  const w1 = m.measureText(city).width;
+  m.font = F2; m.letterSpacing = '3px';
+  const wc = country ? m.measureText(country).width : 0;
+  const w2 = (s.flag ? FG + GAP : 0) + wc;
+  const hasSub = w2 > 0;
+
+  const W = Math.ceil(Math.max(w1, w2)) + 60;
+  const H = hasSub ? 150 : 90;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.shadowColor = 'rgba(0,0,0,.9)'; x.shadowBlur = 18;
+  x.fillStyle = '#ffffff';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = F1; x.letterSpacing = '5px';
+  x.fillText(city, W/2, 45);
+  if (hasSub) {
+    const x0 = (W - w2)/2;
+    if (s.flag) drawEmoji(x, s.flag, x0 + FG/2, 112, FG, flag);
+    x.textAlign = 'left'; x.font = F2; x.letterSpacing = '3px';
+    x.fillText(country, x0 + (s.flag ? FG + GAP : 0), 112);
+  }
+  if (map.hasImage(k)) map.removeImage(k);
+  map.addImage(k, x.getImageData(0,0,W,H), {pixelRatio:2});
+  if (!labelIds.includes(k)) labelIds.push(k);
+  return k;
+}
+
+function applyLook(){
+  if (!map.getLayer('trail-line')) return;
+  const col = $('color').value, w = +$('width').value;
+  map.setPaintProperty('trail-line','line-width',w);
+  map.setPaintProperty('trail-glow','line-width',w*4);
+  map.setPaintProperty('stop-dot','circle-stroke-color',col);
+  map.setPaintProperty('stop-halo','circle-color',col);
+  map.setLayoutProperty('stop-label','visibility',$('labels').checked?'visible':'none');
+  map.setLayoutProperty('stop-label','icon-size',+$('labelSize').value/10);
+
+  try { map.setProjection({type: $('globe').checked ? 'globe' : 'mercator'}); } catch(e){}
+
+  // space background + atmospheric limb, faded out once we are close to the ground
+  try {
+    map.setSky($('atmo').checked ? {
+      'sky-color':'#04070f',
+      'sky-horizon-blend':0.6,
+      'horizon-color':'#6ab0ff',
+      'horizon-fog-blend':0.55,
+      'fog-color':'#0a1526',
+      'fog-ground-blend':0.05,
+      'atmosphere-blend':['interpolate',['linear'],['zoom'],0,1,5,0.85,9,0]
+    } : {'sky-color':'#000000','atmosphere-blend':0});
+  } catch(e){}
+
+  const t = $('terrain').checked;
+  if (t && !map.getSource('dem')) {
+    map.addSource('dem',{type:'raster-dem',encoding:'terrarium',tileSize:256,maxzoom:14,
+      tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']});
+  }
+  try { map.setTerrain(t ? {source:'dem', exaggeration:1.3} : null); } catch(e){}
+}
+
+// ---------- stops ----------
+function flagOf(cc){
+  if (!cc || cc.length !== 2) return '';
+  return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+function pushStop(s){
+  s.mode = $('mode').value;
+  const custom = $('customIcon').value.trim();
+  s.emoji = custom || MODES[s.mode].emoji;
+  s.off = custom ? 90 : MODES[s.mode].off;
+  if (customImgData) { s.imgData = customImgData; s.off = 0; }
+  stops.push(s);
+  renderList();
+  registerAllIcons();
+  build();
+}
+async function addStopFromClick(ll){
+  const s = {lng:ll.lng, lat:ll.lat, city:ll.lat.toFixed(2)+', '+ll.lng.toFixed(2), country:'', flag:''};
+  pushStop(s);
+  try {
+    const j = await (await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat='+
+      ll.lat+'&lon='+ll.lng, {signal:AbortSignal.timeout(8000)})).json();
+    const a = j.address || {};
+    s.city = a.city || a.town || a.village || a.county || a.state || j.name || s.city;
+    s.country = a.country || '';
+    s.flag = flagOf(a.country_code);
+    renderList(); registerAllIcons();
+  } catch(e){}
+}
+function renderList(){
+  const ul = $('list'); ul.innerHTML = '';
+  stops.forEach((s,i) => {
+    const li = document.createElement('li');
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = (i+1)+'. '+(s.flag ? s.flag+' ' : '')+s.city;
+    li.appendChild(nm);
+    if (i > 0) {
+      const sel = document.createElement('select');
+      Object.entries(MODES).forEach(([k,m]) => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = m.emoji+' '+m.label;
+        if (k === s.mode) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = () => {
+        s.mode = sel.value; s.emoji = MODES[sel.value].emoji; s.off = MODES[sel.value].off;
+        registerAllIcons(); build();
+      };
+      li.appendChild(sel);
+    }
+    const x = document.createElement('button');
+    x.className = 'x'; x.textContent = 'x';
+    x.onclick = () => { stops.splice(i,1); renderList(); registerAllIcons(); build(); };
+    li.appendChild(x);
+    ul.appendChild(li);
+  });
+}
+
+// ---------- geometry ----------
+// Own great-circle sampler. turf.greatCircle splits into a MultiLineString at the
+// antimeridian, which silently truncated any route crossing it (Chicago -> Hong Kong
+// stopped dead in the middle of the Pacific). Here longitude is kept continuous and
+// simply runs past +/-180; MapLibre wraps it for display.
+function greatCircle(a, b, n){
+  const v = (lng,lat) => {
+    const p = lat*RAD, l = lng*RAD;
+    return [Math.cos(p)*Math.cos(l), Math.cos(p)*Math.sin(l), Math.sin(p)];
+  };
+  const A = v(a.lng,a.lat), B = v(b.lng,b.lat);
+  const dot = clamp(A[0]*B[0]+A[1]*B[1]+A[2]*B[2], -1, 1);
+  const om = Math.acos(dot), so = Math.sin(om);
+  const out = []; let prev = null;
+  for (let i = 0; i <= n; i++) {
+    const t = i/n;
+    let c;
+    if (so < 1e-9) c = A;
+    else {
+      const s1 = Math.sin((1-t)*om)/so, s2 = Math.sin(t*om)/so;
+      c = [A[0]*s1+B[0]*s2, A[1]*s1+B[1]*s2, A[2]*s1+B[2]*s2];
+    }
+    const lat = Math.atan2(c[2], Math.hypot(c[0],c[1]))/RAD;
+    let lng = Math.atan2(c[1], c[0])/RAD;
+    if (prev !== null) lng = unwrap(lng, prev);
+    prev = lng;
+    out.push([lng, lat]);
+  }
+  return out;
+}
+function unwrap(lng, prev){
+  while (lng - prev >  180) lng -= 360;
+  while (lng - prev < -180) lng += 360;
+  return lng;
+}
+function arc(a, b, bend){
+  const cs = greatCircle(a, b, 192);
+  if (!bend) return cs;
+  const km = turf.distance([a.lng,a.lat],[b.lng,b.lat]);
+  const brg = (turf.bearing([a.lng,a.lat],[b.lng,b.lat]) + 90) * RAD;
+  // flat-earth perpendicular offset, applied in place so longitude stays unwrapped
+  return cs.map((c,i) => {
+    const t = i/(cs.length-1);
+    const off = Math.sin(Math.PI*t)*Math.min(km*bend, 700);
+    const cl = Math.max(0.05, Math.cos(c[1]*RAD));
+    return [c[0] + (off/(111.32*cl))*Math.sin(brg),
+            c[1] + (off/111.32)*Math.cos(brg)];
+  });
+}
+async function legPath(a, b, mode){
+  if (MODES[mode].road) {
+    const u = 'https://router.project-osrm.org/route/v1/driving/'+
+      a.lng+','+a.lat+';'+b.lng+','+b.lat+'?overview=full&geometries=geojson';
+    try {
+      // the OSRM demo server can hang forever on an unroutable pair (an island
+      // hop, say). Without a deadline that wedges build() and the UI with it.
+      const j = await (await fetch(u, {signal:AbortSignal.timeout(8000)})).json();
+      if (j.routes && j.routes[0]) return j.routes[0].geometry.coordinates;
+    } catch(e){}
+    status('No road route for one leg; drew a direct line instead.');
+  }
+  return arc(a, b, MODES[mode].bend);
+}
+
+// mercator, so distances match what MapLibre's line-progress measures
+function mercY(lat){
+  const s = Math.sin(clamp(lat,-85.05,85.05)*RAD);
+  return 0.5 - Math.log((1+s)/(1-s))/(4*Math.PI);
+}
+function haversineKm(a, b){
+  const dLat=(b[1]-a[1])*RAD, dLng=(b[0]-a[0])*RAD;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a[1]*RAD)*Math.cos(b[1]*RAD)*Math.sin(dLng/2)**2;
+  return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+let token = 0;
+async function build(){
+  const tok = ++token;
+  if (stops.length < 2) { legs=[]; pts=[]; cum=[]; cumTotal=0; redraw(); return; }
+  status('Building route...');
+  const out = [];
+  const all = [];
+  for (let i = 1; i < stops.length; i++) {
+    const c = await legPath(stops[i-1], stops[i], stops[i].mode);
+    if (tok !== token) return;
+    const i0 = Math.max(0, all.length - 1);
+    for (let j = (all.length ? 1 : 0); j < c.length; j++) {
+      let lng = c[j][0];
+      if (all.length) lng = unwrap(lng, all[all.length-1][0]);
+      all.push([lng, c[j][1]]);
+    }
+    out.push({si:i, mode:stops[i].mode, emoji:stops[i].emoji, off:stops[i].off,
+              i0, i1:all.length-1});
+  }
+  pts = all;
+
+  // cumulative mercator length (drives the reveal) and real km (drives the zoom)
+  cum = new Float64Array(pts.length);
+  const km = new Float64Array(pts.length);
+  for (let i = 1; i < pts.length; i++) {
+    const dx = (pts[i][0]-pts[i-1][0])/360;
+    const dy = mercY(pts[i][1]) - mercY(pts[i-1][1]);
+    cum[i] = cum[i-1] + Math.hypot(dx, dy);
+    km[i]  = km[i-1] + haversineKm(pts[i-1], pts[i]);
+  }
+  cumTotal = cum[cum.length-1] || 1e-9;
+  totalKm = km[km.length-1];
+
+  legs = out.map(l => {
+    const legKm = km[l.i1] - km[l.i0];
+    return Object.assign(l, {
+      km: legKm,
+      f0: cum[l.i0]/cumTotal, f1: cum[l.i1]/cumTotal,
+      // long hop -> pull back to the globe, short hop -> drop in close
+      zoom: clamp(Math.log2(40075 / Math.max(1, legKm)) + 0.75, 1.0, 12)
+    });
+  });
+  applyTiming();
+
+  redraw();
+  status(legs.length+' leg(s), '+totalKm.toFixed(0)+' km total.');
+}
+
+function legAt(f){
+  for (const l of legs) if (f <= l.f1) return l;
+  return legs[legs.length-1];
+}
+function tInLeg(x, l){ return clamp((x - l.f0) / Math.max(1e-12, l.f1 - l.f0), 0, 1); }
+function easeP(t, k){
+  return t < 0.5 ? Math.pow(2*t, k)/2 : 1 - Math.pow(2*(1-t), k)/2;
+}
+
+// Altitude is keyed to leg-local TIME, not distance. Keying it to distance made the
+// climb swallow a third of the flight, because the easing compresses distance at the
+// ends -- the aircraft would sit there slowly inflating.
+const ROLL = 0.05;   // ground roll before rotation, and after touchdown
+function altOf(l, u){
+  if (!MODES[l.mode].fly || !$('flightArc').checked) return 0;
+  const span = CLIMB - ROLL;
+  if (u < CLIMB)   return smooth(clamp((u - ROLL)/span, 0, 1));
+  if (u > 1-CLIMB) return smooth(clamp(((1-u) - ROLL)/span, 0, 1));
+  return 1;
+}
+function zoomOf(l, u, alt){
+  const i = legs.indexOf(l);
+  let z = l.zoom;
+  const B = 0.22;
+  if (u < B && i > 0)                    z = mix(legs[i-1].zoom, l.zoom, smooth(u/B));
+  else if (u > 1-B && i < legs.length-1) z = mix(l.zoom, legs[i+1].zoom, smooth((u-(1-B))/B));
+  // on a flying leg, sit near the airport at both ends and pull back for the cruise
+  if (MODES[l.mode].fly && $('flightArc').checked) z += (1 - alt) * 3.2;
+  // ease out of and back into the city close-up so the holds join without a snap
+  const cz = +$('cityZoom').value, E = 0.34;
+  if (u < E)        z = mix(cz, z, smooth(u/E));
+  else if (u > 1-E) z = mix(z, cz, smooth((u-(1-E))/E));
+  return clamp(z, 0.8, 14);
+}
+
+// Screen time per leg is decoupled from leg length. Sharing it by distance meant one
+// transpacific flight ate the whole clip and shortening the duration just squeezed every
+// leg equally, so a short hop after a long flight was never visible.
+// The clip is a list of segments: a hold on each city, and a leg between them. Without
+// the holds the vehicle only grazed each stop and the label was gone before you read it.
+let timeline = [];
+function applyTiming(){
+  timeline = [];
+  if (!legs.length) return;
+  const dur = +$('dur').value;
+  const nStops = legs.length + 1;
+  // holds are capped so they can never eat the whole clip
+  const h = Math.min(+$('hold').value, dur * 0.7 / nStops);
+  const legTime = Math.max(0.5, dur - h*nStops);
+
+  const mode = $('timing').value;
+  const w = legs.map(l => {
+    const km = Math.max(1, l.km);
+    return mode === 'equal' ? 1 : mode === 'distance' ? km : Math.pow(km, 0.3);
+  });
+  const wtot = w.reduce((a,b) => a+b, 0);
+
+  let acc = 0;
+  const push = (kind, idx, secs) => {
+    const t0 = acc; acc += secs;
+    timeline.push({kind, idx, t0, t1: acc});
+  };
+  push('hold', 0, h);
+  legs.forEach((l,i) => { push('leg', i, legTime * w[i]/wtot); push('hold', i+1, h); });
+  const k = 1 / (acc || 1);
+  timeline.forEach(s => { s.t0 *= k; s.t1 *= k; });
+}
+
+// Each leg still eases in and out on its own, so the vehicle accelerates away from every
+// stop and slows into the next.
+function sample(t){
+  if (!timeline.length) return {l:null, u:t, f:t, alt:0, hold:false, zoom:+$('zoom').value};
+  const seg = timeline.find(s => t <= s.t1) || timeline[timeline.length-1];
+  const u = clamp((t - seg.t0) / Math.max(1e-12, seg.t1 - seg.t0), 0, 1);
+  if (seg.kind === 'hold') {
+    const si = seg.idx;
+    const cz = +$('cityZoom').value;
+    return {
+      l: legs[Math.min(si, legs.length-1)], u, alt:0, hold:true, stopIdx:si,
+      f: si === 0 ? 0 : legs[si-1].f1,
+      // push in and settle back, starting and ending exactly on cz so the joins with
+      // the surrounding legs are continuous instead of snapping half a zoom level
+      zoom: cz + 0.35*Math.sin(Math.PI*u)
+    };
+  }
+  const l = legs[seg.idx];
+  const alt = altOf(l, u);
+  return {
+    l, u, alt, hold:false,
+    f: l.f0 + easeP(u, MODES[l.mode].fly ? 2.2 : 2) * (l.f1 - l.f0),
+    zoom: zoomOf(l, u, alt)
+  };
+}
+// binary search + lerp: O(log n) per frame instead of walking the whole line
+function posAt(f){
+  const target = clamp(f,0,1) * cumTotal;
+  let lo = 0, hi = cum.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid] <= target) lo = mid; else hi = mid;
+  }
+  const seg = cum[hi] - cum[lo];
+  const u = seg > 0 ? (target - cum[lo]) / seg : 0;
+  return [pts[lo][0] + (pts[hi][0]-pts[lo][0])*u,
+          pts[lo][1] + (pts[hi][1]-pts[lo][1])*u];
+}
+function bearingOf(a, b){
+  const dLng = (b[0]-a[0])*RAD, l1 = a[1]*RAD, l2 = b[1]*RAD;
+  const y = Math.sin(dLng)*Math.cos(l2);
+  const x = Math.cos(l1)*Math.sin(l2) - Math.sin(l1)*Math.cos(l2)*Math.cos(dLng);
+  return Math.atan2(y, x)/RAD;
+}
+
+function redraw(){
+  if (!map.getSource('route')) return;
+  map.getSource('route').setData(pts.length
+    ? {type:'Feature',geometry:{type:'LineString',coordinates:pts},properties:{}}
+    : emptyLine());
+  map.getSource('stops').setData(fc(stops.map((s,i) => ({
+    type:'Feature', geometry:{type:'Point',coordinates:[s.lng,s.lat]},
+    properties:{lbl: map.hasImage('lbl_'+i) ? 'lbl_'+i : ''}
+  }))));
+  map.getSource('veh').setData(fc([]));
+  setReveal(0);
+}
+function setReveal(f){
+  if (!map.getLayer('trail-line')) return;
+  const g = gradient(f);
+  map.setPaintProperty('trail-line','line-gradient',g);
+  map.setPaintProperty('trail-glow','line-gradient',g);
+}
+
+// ---------- animation ----------
+// uploaded image > top-down artwork > emoji. Artwork already points north, so off = 0.
+function vehicleImage(l){
+  const s = stops[l.si];
+  if (s && s.imgKey && map.hasImage(s.imgKey)) return {key:s.imgKey, off:0};
+  if (MODES[l.mode].fly) {
+    const ps = $('planeStyle').value;
+    if (ps !== 'emoji' && map.hasImage(artKey(ps))) return {key:artKey(ps), off:0};
+  } else if ($('iconSet').value === 'art') {
+    const name = ART_FOR[l.mode];
+    if (name && map.hasImage(artKey(name))) return {key:artKey(name), off:0};
+  }
+  return {key:iconKey(l.emoji), off:l.off};
+}
+// H.264 first: Chrome hardware-encodes it, VP9 is a software encoder and drops frames
+const MIMES = [
+  ['video/mp4;codecs=avc1.42003e','mp4'], ['video/mp4;codecs=avc1','mp4'],
+  ['video/x-matroska;codecs=avc1','mkv'],
+  ['video/webm;codecs=vp8','webm'], ['video/webm;codecs=vp9','webm'], ['video/webm','webm']
+];
+
+function run(record){
+  if (!pts.length) { status('Add at least two stops.'); return; }
+  if (raf) { cancelAnimationFrame(raf); raf = null; }
+  const dur = +$('dur').value * 1000;
+  const cam = $('cam').value, follow = $('follow').checked;
+  const maxPitch = +$('pitch').value;
+  const fps = +$('fpsSel').value;
+  if (cam === 'static') fitRoute();
+
+  const chunks = [];
+  let pick = null;
+  if (record) {
+    pick = MIMES.find(m => MediaRecorder.isTypeSupported(m[0])) || ['','webm'];
+    recorder = new MediaRecorder(map.getCanvas().captureStream(fps),
+      {mimeType:pick[0], videoBitsPerSecond: fps >= 60 ? 20000000 : 12000000});
+    recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+    recorder.onstop = () => {
+      const url = URL.createObjectURL(new Blob(chunks,{type:pick[0]}));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'route-'+Date.now()+'.'+pick[1]; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      status('Saved .'+pick[1]+' to Downloads.');
+    };
+    recorder.start();
+    status('Recording ('+pick[0].split(';')[0]+', '+fps+' fps)...');
+  }
+
+  const t0 = performance.now();
+  let frames = 0, mark = t0, js = 0, prevNow = t0;
+  let rawZ = null, camZ = null, camP = null;   // rate-limited then low-passed, see below
+  (function frame(now){
+    const jsStart = performance.now();
+    const t = Math.min(1, (now - t0)/dur);
+    const {l, f, alt, zoom} = sample(t);
+    const p = posAt(f);
+    const q = posAt(Math.min(1, f + 0.0025));
+    const brg = (p[0] === q[0] && p[1] === q[1]) ? 0 : bearingOf(p, q);
+    const veh = vehicleImage(l);
+    const base = +$('iconSize').value/10;
+
+    setReveal(f);
+    map.getSource('veh').setData({type:'Feature',
+      geometry:{type:'Point',coordinates:p},
+      properties:{
+        icon: veh.key, shadow: 'sh_' + veh.key, rot: brg + veh.off,
+        size: base * (1 + 0.55*alt),          // higher reads as bigger
+        shSize: base * (0.92 - 0.10*alt),
+        shOp: 0.16 + 0.30*alt
+      }});
+    // shadow slides away from the aircraft as it climbs
+    map.setPaintProperty('vehicle-shadow','icon-translate',[alt*34, alt*34]);
+
+    if (cam !== 'static') {
+      const z = cam === 'auto' ? zoom : +$('zoom').value;
+      const pitch = maxPitch * clamp((z - 3.5)/3.5, 0, 1);
+      // Leaving a city close-up for cruise altitude is a ~7 zoom level move, and the
+      // descent profile and the close-up blend compound: the raw target peaked above 8
+      // zoom levels per second, which reads as a lurch. A plain low-pass does not help,
+      // it only damps steps, not a target that slides that fast for two seconds. So:
+      // clamp the rate first, then smooth the corners the clamp leaves behind.
+      // Position is never smoothed, it has to stay under the vehicle.
+      const dt = Math.min(0.1, Math.max(0.001, (now - prevNow)/1000));
+      const step = ZOOM_RATE * dt, a = 1 - Math.exp(-8*dt);
+      rawZ = rawZ === null ? z : rawZ + clamp(z - rawZ, -step, step);
+      camZ = camZ === null ? rawZ  : camZ + (rawZ - camZ)*a;
+      camP = camP === null ? pitch : camP + (pitch - camP)*a;
+      map.jumpTo({center:p, zoom:camZ, bearing: follow ? brg : 0, pitch:camP});
+    }
+    prevNow = now;
+    map.triggerRepaint();
+
+    frames++; js += performance.now() - jsStart;
+    if (now - mark > 500) {
+      // showing the script share next to the frame rate makes it obvious whether a slow
+      // clip is script-bound or, as is usually the case here, waiting on tiles
+      $('fps').textContent = Math.round(frames*1000/(now-mark)) + ' fps · js '
+        + (js/frames).toFixed(1) + 'ms' + (map.areTilesLoaded() ? '' : ' · tiles');
+      frames = 0; js = 0; mark = now;
+    }
+    if (t < 1) raf = requestAnimationFrame(frame);
+    else {
+      raf = null; $('fps').textContent = '';
+      if (record) setTimeout(() => recorder.stop(), 500); else status('Done.');
+    }
+  })(t0);
+}
+
+// ---------- tile preload ----------
+// Profiling showed the per-frame JS cost is ~2.7 ms while whole frames took 120 ms: the
+// stutter is tile fetch/decode/upload, not script. Flying the camera along the route once
+// beforehand pulls every tile it will need into the cache, so playback runs from memory.
+function tilesSettled(ms){
+  return new Promise(res => {
+    if (map.areTilesLoaded()) return res();
+    let timer = null;
+    const done = () => { clearTimeout(timer); map.off('idle', done); res(); };
+    timer = setTimeout(done, ms);
+    map.on('idle', done);
+  });
+}
+let preloading = false;
+async function preload(){
+  if (!pts.length || preloading) return;
+  preloading = true;
+  $('preload').textContent = 'Preloading...';
+  const saved = {center:map.getCenter(), zoom:map.getZoom(),
+                 bearing:map.getBearing(), pitch:map.getPitch()};
+  const maxPitch = +$('pitch').value, N = 84;   // denser sampling covers more of the swept viewport
+  for (let i = 0; i <= N; i++) {
+    const s = sample(i/N);
+    const pitch = maxPitch * clamp((s.zoom - 3.5)/3.5, 0, 1);
+    map.jumpTo({center:posAt(s.f), zoom:s.zoom, bearing:0, pitch});
+    await tilesSettled(1800);
+    status('Caching tiles ' + Math.round(i/N*100) + '%');
+  }
+  map.jumpTo(saved);
+  await tilesSettled(2000);
+  $('preload').textContent = 'Preload tiles';
+  status('Tiles cached. Play or record now.');
+  preloading = false;
+}
+
+function fitRoute(){
+  if (!pts.length) return;
+  let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+  for (const p of pts) { w=Math.min(w,p[0]); e=Math.max(e,p[0]); s=Math.min(s,p[1]); n=Math.max(n,p[1]); }
+  map.fitBounds([[w,s],[e,n]], {padding:110, duration:0, pitch:0, bearing:0});
+}
+
+// ---------- geocoding ----------
+async function search(){
+  const q = $('q').value.trim();
+  if (!q) return;
+  status('Searching...');
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1'+
+    '&limit=5&q='+encodeURIComponent(q), {signal:AbortSignal.timeout(8000)});
+  const j = await r.json();
+  const box = $('hits'); box.innerHTML = '';
+  if (!j.length) { status('No match.'); return; }
+  status('');
+  j.forEach(h => {
+    const a = h.address || {};
+    const d = document.createElement('div');
+    d.textContent = h.display_name;
+    d.onclick = () => {
+      pushStop({
+        lng:+h.lon, lat:+h.lat,
+        city: a.city || a.town || a.village || h.name || h.display_name.split(',')[0],
+        country: a.country || '',
+        flag: flagOf(a.country_code)
+      });
+      box.innerHTML = ''; $('q').value = '';
+      map.jumpTo({center:[+h.lon,+h.lat], zoom:Math.max(map.getZoom(),3)});
+    };
+    box.appendChild(d);
+  });
+}
+
+// ---------- canvas sizing ----------
+function resizeStage(){
+  const [w,h] = $('size').value.split('x').map(Number);
+  const f = $('frame');
+  f.style.width = w+'px'; f.style.height = h+'px';
+  const st = $('stage');
+  f.style.transform = 'scale('+Math.min((st.clientWidth-40)/w,(st.clientHeight-40)/h,1)+')';
+  map.resize();
+}
+window.addEventListener('resize', resizeStage);
+
+// ---------- wiring ----------
+Object.entries(MODES).forEach(([k,m]) => {
+  const o = document.createElement('option');
+  o.value = k; o.textContent = m.emoji+' '+m.label;
+  $('mode').appendChild(o);
+});
+$('go').onclick = search;
+$('q').onkeydown = e => { if (e.key === 'Enter') search(); };
+$('undo').onclick = () => { stops.pop(); renderList(); registerAllIcons(); build(); };
+$('clear').onclick = () => { stops=[]; legs=[]; pts=[]; renderList(); redraw(); status(''); };
+$('preview').onclick = () => run(false);
+$('record').onclick = async () => {
+  if ($('autoPreload').checked) await preload();
+  run(true);
+};
+$('preload').onclick = preload;
+$('fit').onclick = fitRoute;
+$('style').onchange = () => { labelIds = []; map.setStyle(STYLES[$('style').value]()); };
+$('size').onchange = resizeStage;
+$('scale').onchange = () => { map.setPixelRatio(+$('scale').value); };
+$('timing').onchange = applyTiming;
+$('customImg').onchange = e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) { customImgData = null; return; }
+  const r = new FileReader();
+  r.onload = () => { customImgData = r.result; status('Custom icon armed for the next leg.'); };
+  r.readAsDataURL(file);
+};
+['color','width','iconSize','labelSize','labels','globe','atmo','terrain'].forEach(id => {
+  $(id).oninput = () => {
+    $('wV').textContent = $('width').value;
+    $('isV').textContent = (+$('iconSize').value/10).toFixed(1);
+    $('lsV').textContent = (+$('labelSize').value/10).toFixed(1);
+    applyLook();
+    if (!raf) setReveal(0);
+  };
+});
+['zoom','pitch','dur','hold','cityZoom'].forEach(id => {
+  $(id).oninput = () => {
+    $('zV').textContent = (+$('zoom').value).toFixed(1);
+    $('pV').textContent = $('pitch').value;
+    $('dV').textContent = $('dur').value;
+    $('hV').textContent = (+$('hold').value).toFixed(1);
+    $('czV').textContent = (+$('cityZoom').value).toFixed(1);
+    applyTiming();   // duration and hold both change the segment split
+  };
+});
+resizeStage();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# recorded output
+*.webm
+*.mp4
+*.mkv
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
