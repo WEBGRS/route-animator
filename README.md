@@ -4,6 +4,8 @@ A free, single-file replacement for paid map-route video makers (mult.dev and si
 Animates a vehicle along a multi-stop route over a photorealistic satellite globe and
 records the result to video. No account, no API key, no watermark, no export limit.
 
+**Live: <https://webgrs.github.io/route-animator/>**
+
 ## Run
 
 ```sh
@@ -23,7 +25,7 @@ from `file://` origins, which breaks search, road routing, and the emoji icons.
 - **Globe projection** (MapLibre GL JS 5) on a black space background
 - **Esri World Imagery** satellite tiles
 - **Atmospheric limb glow** via `setSky`, faded out as the camera descends
-- Bold uppercase city labels with country flag, drawn to canvas so recording captures them
+- Bold uppercase city labels with country flag, drawn to canvas so recording captures them. **Label language** defaults to English, because Nominatim otherwise answers in the browser's language and the uppercase letter-spaced type is designed for Latin script
 - Thin glowing trail behind the vehicle, faint dashed line ahead
 
 ### Vehicle artwork
@@ -180,6 +182,7 @@ for personal use; do not hammer them.
   glyphs — Windows renders every flag as two letters. If jsDelivr is unreachable the code
   falls back to the system font and flags degrade to letters again.
 - Labels use collision detection, so two stops close together at low zoom show only one.
+- Nominatim sometimes returns several names joined by ';' for one field ("United States" can arrive as a simplified/traditional Chinese pair). Only the first is kept.
 - Flight arcs bow out from the great circle by at most 700 km, so the curve stays
   decorative rather than turning a transpacific route into a detour.
 - Recording is realtime. If the preview cannot hold the target fps, the recording won't
