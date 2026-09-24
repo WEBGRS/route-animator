@@ -6,6 +6,15 @@ records the result to video. No account, no API key, no watermark, no export lim
 
 **Live: <https://webgrs.github.io/route-animator/>**
 
+![Editor with a Madison → Reykjavik → Paris flight on the satellite globe](docs/editor.jpg)
+
+<p>
+  <img src="docs/flight-iceland.jpg" width="49%" alt="Preview frame: plane approaching Reykjavik">
+  <img src="docs/flight-paris.jpg" width="49%" alt="Preview frame: plane arriving in Paris">
+</p>
+
+*Frames from the preview. `python docs/screenshots.py` rebuilds these images.*
+
 ## Run
 
 ```sh
