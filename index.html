@@ -21,8 +21,7 @@
   #fps{position:absolute;top:10px;right:12px;font:11px/1 ui-monospace,monospace;
     color:#8fd6ff;background:#000a;padding:5px 8px;border-radius:5px;pointer-events:none}
   .maplibregl-ctrl-attrib{font-size:10px;opacity:.5}
-  h1{font-size:15px;margin:0 0 4px}
-  .sub{color:var(--dim);font-size:11px;margin:0 0 14px}
+  h1{font-size:15px;margin:0 0 14px}
   .sec{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
   .sec>b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
     color:var(--dim);margin-bottom:8px}
@@ -54,7 +53,6 @@
 <div id="wrap">
   <div id="panel">
     <h1>Route Animator</h1>
-    <p class="sub">Satellite globe route videos. Per-leg transport, no account, no watermark.</p>
 
     <div class="sec"><b>1 &middot; Stops</b>
       <div class="row">
@@ -65,9 +63,9 @@
       <p class="hint">Or click the globe to drop a stop.</p>
       <label>Transport for the NEXT leg</label>
       <select id="mode"></select>
-      <label>Custom icon (emoji, overrides preset)</label>
+      <label>Custom icon (emoji)</label>
       <input id="customIcon" placeholder="e.g. a single emoji">
-      <label>Custom icon image (PNG / SVG, overrides both)</label>
+      <label>Custom icon image</label>
       <input type="file" id="customImg" accept="image/*" style="padding:4px">
       <ul id="list"></ul>
       <div class="row" style="margin-top:8px">
@@ -79,7 +77,7 @@
     <div class="sec"><b>2 &middot; Look</b>
       <label>Base map</label>
       <select id="style">
-        <option value="satellite">Satellite globe (mult-style)</option>
+        <option value="satellite">Satellite globe</option>
         <option value="satlabel">Satellite + place names</option>
         <option value="dark">Dark vector</option>
         <option value="liberty">Liberty vector</option>
@@ -102,9 +100,9 @@
       </div>
       <label>Plane look</label>
       <select id="planeStyle">
-        <option value="jetliner">Jetliner (swept, winglets)</option>
-        <option value="delta">Delta jet (sharp)</option>
-        <option value="paperplane">Paper plane (minimal)</option>
+        <option value="jetliner">Jetliner</option>
+        <option value="delta">Delta jet</option>
+        <option value="paperplane">Paper plane</option>
         <option value="widebody">Wide-body</option>
         <option value="emoji">Emoji plane</option>
       </select>
